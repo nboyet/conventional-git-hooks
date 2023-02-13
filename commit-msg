@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# Different mode: easy, basic, hard; 
+# easy will not exit if an error/warning occurs
+# basic will exit if an error occurs
+# hard will exit if an error or a warning occurs
+
+mode="basic"
+
+error="\033[31mError\033[0m"
+warning="\033[33mWarning\033[0m"
+errors_count=0
+warnings_count=0
+
+correct_types=("build" "chore" "ci" "docs" "feat" "new" "fix" "perf" "refactor" "revert" "style" "test" "wip")
+subject_max_length=70
+commit_max_length=120
+type=""
+scope=""
+subject=""
+
+commit_msg=$(cat "${1:?Missing commit message file}")
+
+# Get commit subject (description)
+subject="$(echo "$commit_msg" | awk -F': ' '{print $2}')"
+
+# Get commit type
+type="$(echo "$commit_msg" | awk -F': ' '{print $1}' | awk -F'(' '{print $1}')"
+
+# Get optional scope
+if echo "$commit_msg" | grep -q '('; then
+  scope="$(echo "$commit_msg" | awk -F'(' '{print $2}' | awk -F')' '{print $1}')"
+else
+  scope=""
+fi
+
+echo "Subject: $subject"
+echo "Type: $type"
+echo "Scope: $scope"
+
+# Type empty
+if [ -z "$type" ]; then
+  ((errors_count++))
+  echo -e "${error}: type should not be empty"
+fi
+
+
+# Subject empty
+if [ -z "$subject" ]; then
+  ((errors_count++))
+  echo -e "${error}: subject should not be empty"
+fi
+
+# Is not of "type: subject" format
+if ! echo "$commit_msg" | grep -Eq '^[^:]+: [^ ]+.*$'; then
+  ((errors_count++))
+  echo -e "${error}: The commit message must be of the format 'type: subject'"
+fi
+
+# Type case
+if [ "$type" != "$(echo "$type" | tr '[:upper:]' '[:lower:]')" ]; then
+  ((errors_count++))
+  echo -e "${error}: type should be in lowercase"
+fi
+
+# Type is not a valid value
+if ! echo "${correct_types[@]}" | grep -w "$type" > /dev/null; then
+  ((errors_count++))
+  echo -e  "${error}: type '$type' is not a valid value. Possible values for type are: ${correct_types[@]}"
+fi
+
+
+# Scope case
+if [[ -n "${scope// /}" ]]; then
+  if ! echo "$scope" | grep -qE "^[a-z]+$"; then
+    ((errors_count++))
+    echo -e "${error}: scope must be in lowercase and only with letter"
+  fi
+fi
+
+# Subject case
+if ! echo "$subject" | grep -qE '^[[:lower:]]'; then
+  ((errors_count++))
+  echo -e "${error}: first subject word must be in lowercase"
+fi
+
+# Subject last char
+if echo "$subject" | grep -E '[\?;\.:\/!]$' > /dev/null; then
+  ((warnings_count++))
+  echo -e "${warning}: subject should not end with a special character"
+fi
+
+
+# Max subject length
+if [ "${#subject}" -gt $subject_max_length ]; then
+  ((warnings_count++))
+  echo -e "${warning}: subject length exceeds ${subject_max_length} characters"
+fi
+
+# Max commit length
+if [ "${#commit_msg}" -gt $commit_max_length ]; then
+  ((warnings_count++))
+  echo -e "${warning}: commit length exceeds ${commit_max_length} characters"
+fi
+
+# Check number of error / warning
+if [ $errors_count != 0 ]  && ([ $mode == "basic" ] || [ $mode == "hard" ]); then
+  echo -e "\033[31mCommit is not realized ! Please correct your errors before\033[0m"
+  exit 1
+fi
+
+if [ $warnings_count != 0 ] && [ $mode == "hard" ]; then
+  echo -e "\033[33mCommit is not realized ! Please correct your warnings and errors before\033[0m"
+  exit 1
+fi
+
+exit 0
